@@ -8,7 +8,7 @@ import copy
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 from src.dataset import ClinicalDataset
-from src.utils import calculate_sensitivity_specificity
+from src.utils import calculate_sensitivity_specificity, log_optuna_metrics
 from src.models import SimpleNN
 
 def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
@@ -36,13 +36,14 @@ def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
     pred_labels = (np.array(y_pred) > 0.5).astype(int)
     sensitivity, specificity = calculate_sensitivity_specificity(y_true, pred_labels)
     metrics = {
+        "loss": total_loss / len(loader),
         "accuracy": accuracy_score(y_true, pred_labels),
         "auc": roc_auc_score(y_true, y_pred),
         "sensitivity": sensitivity,
         "specificity": specificity
     }
     predictions_and_labels = {"labels": np.array(y_true), "predictions": np.array(y_pred)}
-    return total_loss / len(loader), metrics, predictions_and_labels
+    return metrics["loss"], metrics, predictions_and_labels
 
 def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device, num_epochs):
     """
@@ -50,6 +51,7 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
     """
     best_val_auc = 0
     best_model_state = None
+    best_val_metrics = {}
 
     for epoch in range(num_epochs):
         train_loss, train_metrics, _ = run_epoch(model, train_loader, criterion, optimizer, device, is_training=True)
@@ -64,12 +66,13 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
 
         if val_metrics['auc'] > best_val_auc:
             best_val_auc = val_metrics['auc']
+            best_val_metrics = val_metrics
             best_model_state = copy.deepcopy(model.state_dict())
 
-    return best_model_state, best_val_auc
+    return best_model_state, best_val_metrics
 
 def train_and_evaluate_model(
-    dataloaders, feature_columns, test_df, exclude_columns,
+    trial, dataloaders, feature_columns, test_df, exclude_columns,
     num_epochs=30, hidden_size=64, num_layers=3, learning_rate=0.001, batch_size=32
 ):
     """
@@ -81,17 +84,21 @@ def train_and_evaluate_model(
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
+    val_metrics_folds = {"loss": [], "accuracy": [], "auc": []}
     outputs_and_predictions = {"labels": [], "predictions": []}
 
-    val_auc_list = []
 
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
         train_loader, val_loader = loaders['train'], loaders['val']
 
-        best_model_state, best_val_auc = train_one_fold(
+        best_model_state, val_metrics = train_one_fold(
             model, train_loader, val_loader, criterion, optimizer, device, num_epochs
         )
+
+        val_metrics_folds["loss"].append(val_metrics["loss"])
+        val_metrics_folds["accuracy"].append(val_metrics["accuracy"])
+        val_metrics_folds["auc"].append(val_metrics["auc"])
 
         if best_model_state is not None:
             model.load_state_dict(best_model_state)
@@ -103,12 +110,19 @@ def train_and_evaluate_model(
         outputs_and_predictions["labels"].append(test_ys["labels"])
         outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
-        val_auc_list.append(best_val_auc)
 
     np.save("predictions/outputs_and_predictions.npy", outputs_and_predictions)
 
+
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
     std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
+    mean_val_metrics = {metric: np.mean(values) for metric, values in val_metrics_folds.items()}
+
+    # log to optuna
+    log_optuna_metrics(trial, mean_val_metrics)
+    log_optuna_metrics(trial, mean_test_metrics, is_test=True)
+
+
     logging.info(
         f"Mean Test Metrics Across All Folds: "
         f"Loss: {mean_test_metrics['loss']:.4f} "
@@ -117,6 +131,8 @@ def train_and_evaluate_model(
         f"Sensitivity: {mean_test_metrics['sensitivity']:.4f}±{std_test_metrics['sensitivity']:.4f}, "
         f"Specificity: {mean_test_metrics['specificity']:.4f}±{std_test_metrics['specificity']:.4f}"
     )
+
+    return mean_val_metrics
 
 
 def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, batch_size, test_metrics):

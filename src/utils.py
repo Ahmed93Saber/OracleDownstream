@@ -53,3 +53,14 @@ def calculate_sensitivity_specificity(y_true, y_pred):
     specificity = tn / (tn + fp)
     return sensitivity, specificity
 
+
+def log_optuna_metrics(trial, metrics, is_test=False):
+    """
+    Logs the metrics to Optuna.
+    """
+    for metric, value in metrics.items():
+        if is_test:
+            trial.set_user_attr(f"test_{metric}", value)
+        else:
+            trial.set_user_attr(metric, value)
+
