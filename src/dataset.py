@@ -49,10 +49,20 @@ class ImagingDataset(Dataset):
 
         return features_tensor, label_tensor
 
-def create_dataloaders(train_df: pd.DataFrame, label_column: str, exclude_columns: list, batch_size: int, n_splits: int = 5):
+def create_dataloaders(
+    train_df: pd.DataFrame,
+    label_column: str,
+    exclude_columns: list,
+    batch_size: int,
+    n_splits: int = 5,
+    dataset_cls=ClinicalDataset,
+    dataset_kwargs: dict = None
+):
     """
-    Creates stratified K-fold dataloaders for training and validation.
+    Creates stratified K-fold dataloaders for training and validation using a generic dataset class.
     """
+    if dataset_kwargs is None:
+        dataset_kwargs = {}
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
     feature_columns = [col for col in train_df.columns if col not in exclude_columns]
     dataloaders = {}
@@ -60,11 +70,11 @@ def create_dataloaders(train_df: pd.DataFrame, label_column: str, exclude_column
         train_data = train_df.iloc[train_idx]
         val_data = train_df.iloc[val_idx]
         train_loader = DataLoader(
-            ClinicalDataset(train_data, columns_to_drop=exclude_columns),
+            dataset_cls(train_data, **dataset_kwargs),
             batch_size=batch_size, shuffle=True
         )
         val_loader = DataLoader(
-            ClinicalDataset(val_data, columns_to_drop=exclude_columns),
+            dataset_cls(val_data, **dataset_kwargs),
             batch_size=batch_size, shuffle=False
         )
         dataloaders[fold] = {'train': train_loader, 'val': val_loader}
