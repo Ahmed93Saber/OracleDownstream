@@ -81,7 +81,7 @@ def train_and_evaluate_model(
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
-    outputs_and_predictions = {"labels": np.array([]), "predictions": np.array([])}
+    outputs_and_predictions = {"labels": [], "predictions": []}
 
     val_auc_list = []
 
@@ -99,8 +99,9 @@ def train_and_evaluate_model(
         test_metrics, test_ys = evaluate_on_test_set(
             model, test_df, exclude_columns, criterion, device, batch_size, test_metrics
         )
-        outputs_and_predictions["labels"] = np.concatenate((outputs_and_predictions["labels"], test_ys["labels"]))
-        outputs_and_predictions["predictions"] = np.concatenate((outputs_and_predictions["predictions"], test_ys["predictions"]))
+
+        outputs_and_predictions["labels"].append(test_ys["labels"])
+        outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
         val_auc_list.append(best_val_auc)
 
