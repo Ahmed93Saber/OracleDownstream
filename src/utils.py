@@ -1,6 +1,8 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix
+
 
 def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col, exclude_columns):
     """
@@ -43,3 +45,11 @@ def add_num_weeks_column(df, date_col, reference_date=None):
     df[date_col] = pd.to_datetime(df[date_col].astype(str), format='%Y%m%d')
     df["num_weeks"] = ((df[date_col] - reference_date).dt.days // 7).astype(int)
     return df
+
+
+def calculate_sensitivity_specificity(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    sensitivity = tp / (tp + fn)
+    specificity = tn / (tn + fp)
+    return sensitivity, specificity
+

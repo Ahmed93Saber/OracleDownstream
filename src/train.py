@@ -8,6 +8,7 @@ import copy
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 from src.dataset import ClinicalDataset
+from src.utils import calculate_sensitivity_specificity
 from src.models import SimpleNN
 
 def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
@@ -33,9 +34,12 @@ def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
         y_pred.extend(torch.sigmoid(outputs).detach().cpu().numpy())
 
     pred_labels = (np.array(y_pred) > 0.5).astype(int)
+    sensitivity, specificity = calculate_sensitivity_specificity(y_true, pred_labels)
     metrics = {
         "accuracy": accuracy_score(y_true, pred_labels),
-        "auc": roc_auc_score(y_true, y_pred)
+        "auc": roc_auc_score(y_true, y_pred),
+        "sensitivity": sensitivity,
+        "specificity": specificity
     }
     predictions_and_labels = {"labels": np.array(y_true), "predictions": np.array(y_pred)}
     return total_loss / len(loader), metrics, predictions_and_labels
@@ -62,7 +66,7 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
             best_val_auc = val_metrics['auc']
             best_model_state = copy.deepcopy(model.state_dict())
 
-    return best_model_state
+    return best_model_state, best_val_auc
 
 def train_and_evaluate_model(
     dataloaders, feature_columns, test_df, exclude_columns,
@@ -76,14 +80,16 @@ def train_and_evaluate_model(
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    test_metrics = {"loss": [], "accuracy": [], "auc": []}
+    test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
     outputs_and_predictions = {"labels": np.array([]), "predictions": np.array([])}
+
+    val_auc_list = []
 
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
         train_loader, val_loader = loaders['train'], loaders['val']
 
-        best_model_state = train_one_fold(
+        best_model_state, best_val_auc = train_one_fold(
             model, train_loader, val_loader, criterion, optimizer, device, num_epochs
         )
 
@@ -96,14 +102,21 @@ def train_and_evaluate_model(
         outputs_and_predictions["labels"] = np.concatenate((outputs_and_predictions["labels"], test_ys["labels"]))
         outputs_and_predictions["predictions"] = np.concatenate((outputs_and_predictions["predictions"], test_ys["predictions"]))
 
+        val_auc_list.append(best_val_auc)
+
     np.save("predictions/outputs_and_predictions.npy", outputs_and_predictions)
+
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
+    std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
     logging.info(
         f"Mean Test Metrics Across All Folds: "
-        f"Loss: {mean_test_metrics['loss']:.4f}, "
-        f"Acc: {mean_test_metrics['accuracy']:.4f}, "
-        f"AUC: {mean_test_metrics['auc']:.4f}"
+        f"Loss: {mean_test_metrics['loss']:.4f} "
+        f"Acc: {mean_test_metrics['accuracy']:.4f}±{std_test_metrics['accuracy']:.4f}, "
+        f"AUC: {mean_test_metrics['auc']:.4f}±{std_test_metrics['auc']:.4f}, "
+        f"Sensitivity: {mean_test_metrics['sensitivity']:.4f}±{std_test_metrics['sensitivity']:.4f}, "
+        f"Specificity: {mean_test_metrics['specificity']:.4f}±{std_test_metrics['specificity']:.4f}"
     )
+
 
 def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, batch_size, test_metrics):
     """
@@ -117,8 +130,14 @@ def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, bat
     test_loss, test_metrics_fold, test_ys = run_epoch(
         model, test_loader, criterion, None, device, is_training=False
     )
+
+
     test_metrics["loss"].append(test_loss)
     test_metrics["accuracy"].append(test_metrics_fold["accuracy"])
     test_metrics["auc"].append(test_metrics_fold["auc"])
+    test_metrics["sensitivity"].append(test_metrics_fold["sensitivity"])
+    test_metrics["specificity"].append(test_metrics_fold["specificity"])
+
+
     return test_metrics, test_ys
 
