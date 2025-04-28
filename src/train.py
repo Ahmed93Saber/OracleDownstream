@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 
 from src.dataset import ClinicalDataset
 from src.utils import calculate_sensitivity_specificity, log_optuna_metrics
-from src.models import SimpleNN
+from src.models import SimpleNN, SimpleNNWithBatchNorm
 
 def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
     """
@@ -73,20 +73,28 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
 
 def train_and_evaluate_model(
     trial, dataloaders, feature_columns, test_df, exclude_columns,
-    num_epochs=30, hidden_size=64, num_layers=3, learning_rate=0.001, batch_size=32
+    num_epochs=30, hidden_size=64, num_layers=3, learning_rate=0.001, batch_size=32,
+    model_cls=None, model_kwargs=None
 ):
     """
     Trains and evaluates the model using cross-validation.
+    model_cls: class of the model to instantiate.
+    model_kwargs: dict of kwargs to pass to the model constructor.
     """
+    if model_cls is None:
+        from src.models import SimpleNN
+        model_cls = SimpleNN
+    if model_kwargs is None:
+        model_kwargs = {"input_size": len(feature_columns), "hidden_size": hidden_size, "num_layer": num_layers}
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SimpleNN(input_size=len(feature_columns), hidden_size=hidden_size, num_layer=num_layers).to(device)
+    model = model_cls(**model_kwargs).to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
     val_metrics_folds = {"loss": [], "accuracy": [], "auc": []}
     outputs_and_predictions = {"labels": [], "predictions": []}
-
 
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
@@ -110,9 +118,7 @@ def train_and_evaluate_model(
         outputs_and_predictions["labels"].append(test_ys["labels"])
         outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
-
     np.save("predictions/outputs_and_predictions.npy", outputs_and_predictions)
-
 
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
     std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
@@ -121,7 +127,6 @@ def train_and_evaluate_model(
     # log to optuna
     log_optuna_metrics(trial, mean_val_metrics)
     log_optuna_metrics(trial, mean_test_metrics, is_test=True)
-
 
     logging.info(
         f"Mean Test Metrics Across All Folds: "
@@ -133,7 +138,6 @@ def train_and_evaluate_model(
     )
 
     return mean_val_metrics
-
 
 def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, batch_size, test_metrics):
     """
@@ -148,13 +152,10 @@ def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, bat
         model, test_loader, criterion, None, device, is_training=False
     )
 
-
     test_metrics["loss"].append(test_loss)
     test_metrics["accuracy"].append(test_metrics_fold["accuracy"])
     test_metrics["auc"].append(test_metrics_fold["auc"])
     test_metrics["sensitivity"].append(test_metrics_fold["sensitivity"])
     test_metrics["specificity"].append(test_metrics_fold["specificity"])
 
-
     return test_metrics, test_ys
-
