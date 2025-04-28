@@ -49,7 +49,7 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
 
     for epoch in range(num_epochs):
         train_loss, train_metrics, _ = run_epoch(model, train_loader, criterion, optimizer, device, is_training=True)
-        val_loss, val_metrics, val_ys = run_epoch(model, val_loader, criterion, optimizer, device, is_training=False)
+        val_loss, val_metrics, _ = run_epoch(model, val_loader, criterion, optimizer, device, is_training=False)
 
         if epoch % 5 == 0:
             logging.info(
@@ -73,11 +73,11 @@ def train_and_evaluate_model(
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SimpleNN(input_size=len(feature_columns), hidden_size=hidden_size, num_layer=num_layers).to(device)
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCEWithLogitsLoss()  # pos_weight = torch.tensor ([62 / 35], device=device))
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     test_metrics = {"loss": [], "accuracy": [], "auc": []}
-    outputs_and_predictions = {"labels": np.array([]), "predictions": np.array([])}
+    outputs_and_predictions = {"labels": [], "predictions": []}
 
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
@@ -93,8 +93,9 @@ def train_and_evaluate_model(
         test_metrics, test_ys = evaluate_on_test_set(
             model, test_df, exclude_columns, criterion, device, batch_size, test_metrics
         )
-        outputs_and_predictions["labels"] = np.concatenate((outputs_and_predictions["labels"], test_ys["labels"]))
-        outputs_and_predictions["predictions"] = np.concatenate((outputs_and_predictions["predictions"], test_ys["predictions"]))
+
+        outputs_and_predictions["labels"].append(test_ys["labels"])
+        outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
     np.save("predictions/outputs_and_predictions.npy", outputs_and_predictions)
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
