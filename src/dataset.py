@@ -1,5 +1,6 @@
 import torch
 import pandas as pd
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
 
@@ -19,7 +20,34 @@ class ClinicalDataset(Dataset):
         label = row['label-1RN-0Normal']
         features = row.drop(self.columns_to_drop).values.astype('float32')
         features_tensor = torch.tensor(features, dtype=torch.float32)
-        return features_tensor, label
+        label_tensor = torch.tensor(label, dtype=torch.float32)
+        return features_tensor, label_tensor
+
+
+class ImagingDataset(Dataset):
+    """
+    PyTorch Dataset for Imaging data (Representations).
+    """
+    def __init__(self, dataframe: pd.DataFrame, data_dir : str, is_gap : bool = False):
+        self.dataframe = dataframe
+
+        if is_gap:
+            self.embedd_type = 'embedding_attn_pool'  # 2D
+        else:
+            self.embedd_type = "embedding_norm"  # 3D
+
+        self.img_seq = np.load(data_dir, allow_pickle=True).item()
+
+    def __len__(self) -> int:
+        return len(self.dataframe)
+
+    def __getitem__(self, index: int):
+        row = self.dataframe.iloc[index]
+        label = row['label-1RN-0Normal']
+        features_tensor = torch.tensor(self.img_seq[self.embedd_type][row['Patient_ID']]).float()
+        label_tensor = torch.tensor(label, dtype=torch.float32)
+
+        return features_tensor, label_tensor
 
 def create_dataloaders(train_df: pd.DataFrame, label_column: str, exclude_columns: list, batch_size: int, n_splits: int = 5):
     """
