@@ -44,7 +44,13 @@ class ImagingDataset(Dataset):
     def __getitem__(self, index: int):
         row = self.dataframe.iloc[index]
         label = row['label-1RN-0Normal']
-        features_tensor = torch.tensor(self.img_seq[self.embedd_type][row['Patient_ID']]).float()
+        patient_id = row["Patient ID"]
+        met_id = row["id"]
+        scan_date = row["CROSSING_TIME_POINT"].strftime('%Y-%m-%d')
+        dict_key = f"{patient_id}_{scan_date}_{met_id}"
+
+
+        features_tensor = features_tensor = self.img_seq[dict_key][self.embedd_type].clone().detach().float().squeeze()
         label_tensor = torch.tensor(label, dtype=torch.float32)
 
         return features_tensor, label_tensor
