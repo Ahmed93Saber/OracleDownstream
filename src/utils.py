@@ -42,7 +42,7 @@ def add_num_weeks_column(df, date_col, reference_date=None):
         reference_date = pd.to_datetime('1900-01-01')
     else:
         reference_date = pd.to_datetime(reference_date)
-    df[date_col] = pd.to_datetime(df[date_col].astype(str), format='%Y%m%d')
+    df[date_col] = pd.to_datetime(df[date_col].astype(str), format='%Y-%m-%d')
     df["num_weeks"] = ((df[date_col] - reference_date).dt.days // 7).astype(int)
     return df
 

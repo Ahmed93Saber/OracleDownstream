@@ -74,23 +74,31 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
 def train_and_evaluate_model(
     trial, dataloaders, feature_columns, test_df, exclude_columns,
     num_epochs=30, hidden_size=64, num_layers=3, learning_rate=0.001, batch_size=32,
-    model_cls=None, model_kwargs=None
+    model_cls=None, model_kwargs=None,
+    dataset_cls=None, dataset_kwargs=None
 ):
     """
     Trains and evaluates the model using cross-validation.
     model_cls: class of the model to instantiate.
     model_kwargs: dict of kwargs to pass to the model constructor.
+    dataset_cls: class of the dataset to instantiate for test set.
+    dataset_kwargs: dict of kwargs to pass to the dataset constructor for test set.
     """
     if model_cls is None:
         from src.models import SimpleNN
         model_cls = SimpleNN
     if model_kwargs is None:
         model_kwargs = {"input_size": len(feature_columns), "hidden_size": hidden_size, "num_layer": num_layers}
+    if dataset_cls is None:
+        from src.dataset import ClinicalDataset
+        dataset_cls = ClinicalDataset
+    if dataset_kwargs is None:
+        dataset_kwargs = {"columns_to_drop": exclude_columns}
+
+    weight_decay = trial.suggest_loguniform("weight_decay", 1e-5, 1e-1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model_cls(**model_kwargs).to(device)
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
     val_metrics_folds = {"loss": [], "accuracy": [], "auc": []}
@@ -99,6 +107,10 @@ def train_and_evaluate_model(
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
         train_loader, val_loader = loaders['train'], loaders['val']
+
+        # Instantiate a new model and optimizer for each fold (reset parameters)
+        model = model_cls(**model_kwargs).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
         best_model_state, val_metrics = train_one_fold(
             model, train_loader, val_loader, criterion, optimizer, device, num_epochs
@@ -112,7 +124,8 @@ def train_and_evaluate_model(
             model.load_state_dict(best_model_state)
 
         test_metrics, test_ys = evaluate_on_test_set(
-            model, test_df, exclude_columns, criterion, device, batch_size, test_metrics
+            model, test_df, exclude_columns, criterion, device, batch_size, test_metrics,
+            dataset_cls=dataset_cls, dataset_kwargs=dataset_kwargs
         )
 
         outputs_and_predictions["labels"].append(test_ys["labels"])
@@ -139,12 +152,15 @@ def train_and_evaluate_model(
 
     return mean_val_metrics
 
-def evaluate_on_test_set(model, test_df, exclude_columns, criterion, device, batch_size, test_metrics):
+def evaluate_on_test_set(
+    model, test_df, exclude_columns, criterion, device, batch_size, test_metrics,
+    dataset_cls, dataset_kwargs
+):
     """
     Evaluates the model on the test set and updates metrics.
     """
     test_loader = DataLoader(
-        ClinicalDataset(test_df, columns_to_drop=exclude_columns),
+        dataset_cls(test_df, **dataset_kwargs),
         batch_size=batch_size, shuffle=False
     )
     model.eval()
