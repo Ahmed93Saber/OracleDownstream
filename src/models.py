@@ -185,3 +185,45 @@ class AttentionPooling(nn.Module):
         attention_weights = F.softmax(scores, dim=1)
         context_vector = torch.sum(attention_weights.unsqueeze(-1) * transformer_outputs, dim=1)
         return context_vector
+
+class ViTBinaryClassifier(nn.Module):
+    def __init__(self, pretrained_model: nn.Module, unfreeze_last_n: int = 0):
+        super(ViTBinaryClassifier, self).__init__()
+
+        self.patch_embedding = pretrained_model.patch_embedding
+        self.blocks = pretrained_model.blocks  # nn.ModuleList of TransformerBlock
+        self.norm = pretrained_model.norm
+        self.attention_pooling = pretrained_model.attention_pooling
+
+        hidden_size = pretrained_model.norm.normalized_shape[0]
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_size, 1),
+        )
+
+        # Freeze everything by default
+        for param in self.parameters():
+            param.requires_grad = False
+
+        # Unfreeze the last N blocks (if N > 0)
+        if unfreeze_last_n > 0:
+            for block in self.blocks[-unfreeze_last_n:]:
+                for param in block.parameters():
+                    param.requires_grad = True
+
+        # Always train the classifier
+        for param in self.classifier.parameters():
+            param.requires_grad = True
+
+    def forward(self, x):
+        x = self.patch_embedding(x)
+        for blk in self.blocks:
+            x = blk(x)
+        x = self.norm(x)
+        x = self.attention_pooling(x)
+        out = self.classifier(x)
+        return out
