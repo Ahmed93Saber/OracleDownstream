@@ -110,7 +110,7 @@ def train_and_evaluate_model(
 
         # Instantiate a new model and optimizer for each fold (reset parameters)
         model = model_cls(**model_kwargs).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
         best_model_state, val_metrics = train_one_fold(
             model, train_loader, val_loader, criterion, optimizer, device, num_epochs
