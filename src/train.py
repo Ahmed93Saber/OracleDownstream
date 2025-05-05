@@ -39,7 +39,7 @@ def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
     metrics = {
         "loss": total_loss / len(loader),
         "accuracy": accuracy_score(y_true, pred_labels),
-        "auc": roc_auc_score(y_true, y_pred),
+        "auc": roc_auc_score(y_true, y_pred, average='weighted'),
         "sensitivity": sensitivity,
         "specificity": specificity
     }
@@ -96,7 +96,7 @@ def train_and_evaluate_model(
     if dataset_kwargs is None:
         dataset_kwargs = {"columns_to_drop": exclude_columns}
 
-    weight_decay = trial.suggest_loguniform("weight_decay", 1e-5, 1)
+    weight_decay = trial.suggest_loguniform("weight_decay", 1e-3, 1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     criterion = nn.BCEWithLogitsLoss()

@@ -1,0 +1,8 @@
+data:
+  geo_csv_path: "dataframes/threshold_df_new.csv"
+  curated_csv_path: "dataframes/molab_df_curated.csv"
+  img_seq_path: "imgs/molab-hardy-leaf-97_images.npy"
+  pretrained_model_path: "C:/Users/gomaaad/PycharmProjects/pretrainedmodels/hardy-leaf-97/best_model_942_0.291.pt"
+  label_col: 'label-1RN-0Normal'
+  exclude_columns: ['label-1RN-0Normal', 'Patient ID', 'id', 'BASELINE_TIME_POINT',
+                    "CROSSING_TIME_POINT", "BASELINE_VOLUME", "scan_date"]
