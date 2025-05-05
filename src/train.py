@@ -8,7 +8,7 @@ import copy
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 from src.dataset import ClinicalDataset
-from src.utils import calculate_sensitivity_specificity, log_optuna_metrics
+from src.utils import calculate_sensitivity_specificity, log_optuna_metrics, save_models
 from src.models import SimpleNN, SimpleNNWithBatchNorm
 
 def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
@@ -23,6 +23,7 @@ def run_epoch(model, loader, criterion, optimizer, device, is_training: bool):
         inputs, labels = inputs.to(device), labels.to(device).float()
         outputs = model(inputs).squeeze()
         loss = criterion(outputs, labels)
+
         total_loss += loss.item()
 
         if is_training:
@@ -95,7 +96,7 @@ def train_and_evaluate_model(
     if dataset_kwargs is None:
         dataset_kwargs = {"columns_to_drop": exclude_columns}
 
-    weight_decay = trial.suggest_loguniform("weight_decay", 1e-5, 1e-1)
+    weight_decay = trial.suggest_loguniform("weight_decay", 1e-5, 1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     criterion = nn.BCEWithLogitsLoss()
@@ -103,6 +104,7 @@ def train_and_evaluate_model(
     test_metrics = {"loss": [], "accuracy": [], "auc": [], "sensitivity": [], "specificity": []}
     val_metrics_folds = {"loss": [], "accuracy": [], "auc": []}
     outputs_and_predictions = {"labels": [], "predictions": []}
+    models = []
 
     for fold, loaders in dataloaders.items():
         logging.info(f"Training Fold {fold + 1}")
@@ -128,14 +130,19 @@ def train_and_evaluate_model(
             dataset_cls=dataset_cls, dataset_kwargs=dataset_kwargs
         )
 
+        if test_metrics["accuracy"][fold] > 0.5 and test_metrics["auc"][fold] > 0.55:
+            models.append(model.state_dict())
+
         outputs_and_predictions["labels"].append(test_ys["labels"])
         outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
-    np.save("predictions/outputs_and_predictions.npy", outputs_and_predictions)
+    np.save(f"predictions/outputs_and_predictions_{trial.number}.npy", outputs_and_predictions)
 
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
     std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
     mean_val_metrics = {metric: np.mean(values) for metric, values in val_metrics_folds.items()}
+
+    save_models(models, trial.number, mean_test_metrics)
 
     # log to optuna
     log_optuna_metrics(trial, mean_val_metrics)

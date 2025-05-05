@@ -28,8 +28,9 @@ class ImagingDataset(Dataset):
     """
     PyTorch Dataset for Imaging data (Representations).
     """
-    def __init__(self, dataframe: pd.DataFrame, data_dir : str, is_gap : bool = False):
+    def __init__(self, dataframe: pd.DataFrame, data_dir : str, is_gap : bool = False, is_img : bool = False):
         self.dataframe = dataframe
+        self.is_img = is_img
 
         if is_gap:
             self.embedd_type = 'embedding_attn_pool'  # 2D
@@ -49,10 +50,11 @@ class ImagingDataset(Dataset):
         scan_date = row["scan_date"].split()[0]
         dict_key = f"{patient_id}_{scan_date}_{met_id}"
 
-        try:
+        if self.is_img:
+            features_tensor = self.img_seq[dict_key][0, ...].clone().detach().float()
+        else:
             features_tensor = self.img_seq[dict_key][self.embedd_type].clone().detach().float().squeeze()
-        except KeyError:
-            print(f" KeyError: {dict_key} not found in img_seq")
+
         label_tensor = torch.tensor(label, dtype=torch.float32)
 
         return features_tensor, label_tensor

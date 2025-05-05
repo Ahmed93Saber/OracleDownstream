@@ -1,10 +1,14 @@
 import pandas as pd
+import torch
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix
+import os
+import random
+import numpy as np
 
 
-def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col, exclude_columns):
+def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col):
     """
     Loads GEO and curated datasets, merges them on patient identifiers, filters out rows with missing labels,
     and computes the number of weeks from a reference date.
@@ -12,7 +16,6 @@ def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col, exclude_
         geo_csv_path (str): Path to the GEO dataset CSV file.
         curated_csv_path (str): Path to the curated dataset CSV file.
         label_col (str): The column name for the labels in the curated dataset.
-        exclude_columns (list): List of columns to exclude from features.
     Returns:
         pd.DataFrame: Preprocessed GEO dataset with labels and computed weeks.
         list: List of columns excluded from features.
@@ -22,9 +25,9 @@ def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col, exclude_
     geo_df = geo_df.merge(curated_df[['Patient ID', 'id', label_col]], on=['Patient ID', 'id'], how='left')
     geo_df = geo_df[geo_df[label_col].notna()]
     geo_df = add_num_weeks_column(geo_df, 'CROSSING_TIME_POINT')
-    return geo_df, exclude_columns
+    return geo_df
 
-def split_and_scale_data(df, label_col, feature_cols, test_size=0.2, random_state=42):
+def split_and_scale_data(df, label_col, feature_cols, test_size=0.2, random_state=101):
     """
     Splits the dataframe into train and test sets and scales feature columns.
     """
@@ -65,4 +68,19 @@ def log_optuna_metrics(trial, metrics, is_test=False):
             trial.set_user_attr(metric, value)
 
 
+def save_models(models_stat_dicts, trial_number, mean_metrics, saving_path="weights"):
 
+
+    if len(models_stat_dicts) == 5 and mean_metrics['accuracy'] > 0.7 and mean_metrics['auc'] > 0.7:
+
+        for fold, state_dict in enumerate(models_stat_dicts):
+            torch.save(state_dict, f"{saving_path}/model_fold_{fold}_trial_{trial_number}.pth")
+
+
+def set_random(seed=1, deterministic=True):
+    torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = deterministic
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
