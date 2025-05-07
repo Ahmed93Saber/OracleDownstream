@@ -221,8 +221,10 @@ class ViTBinaryClassifier(nn.Module):
 
     def forward(self, x):
         x = self.patch_embedding(x)
+        attn_weights = []
         for blk in self.blocks:
             x = blk(x)
+
         x = self.norm(x)
         x = self.attention_pooling(x)
         out = self.classifier(x)
