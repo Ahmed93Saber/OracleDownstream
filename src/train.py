@@ -136,13 +136,13 @@ def train_and_evaluate_model(
         outputs_and_predictions["labels"].append(test_ys["labels"])
         outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
-    np.save(f"predictions/outputs_and_predictions_{trial.number}.npy", outputs_and_predictions)
+    # np.save(f"predictions/outputs_and_predictions_{trial.number}.npy", outputs_and_predictions)
 
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
     std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
     mean_val_metrics = {metric: np.mean(values) for metric, values in val_metrics_folds.items()}
 
-    save_models(models, trial.number, mean_test_metrics)
+    # save_models(models, trial.number, mean_test_metrics)
 
     # log to optuna
     log_optuna_metrics(trial, mean_val_metrics)
