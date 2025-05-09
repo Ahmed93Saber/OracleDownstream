@@ -73,8 +73,8 @@ def train_one_fold(model, train_loader, val_loader, criterion, optimizer, device
     return best_model_state, best_val_metrics
 
 def train_and_evaluate_model(
-    trial, dataloaders, feature_columns, test_df, exclude_columns,
-    num_epochs=30, hidden_size=64, num_layers=3, learning_rate=0.001, batch_size=32,
+    trial, dataloaders, test_df, exclude_columns,
+    num_epochs=30, learning_rate=0.001, batch_size=32,
     model_cls=None, model_kwargs=None,
     dataset_cls=None, dataset_kwargs=None
 ):
@@ -88,15 +88,13 @@ def train_and_evaluate_model(
     if model_cls is None:
         from src.models import SimpleNN
         model_cls = SimpleNN
-    if model_kwargs is None:
-        model_kwargs = {"input_size": len(feature_columns), "hidden_size": hidden_size, "num_layer": num_layers}
     if dataset_cls is None:
         from src.dataset import ClinicalDataset
         dataset_cls = ClinicalDataset
     if dataset_kwargs is None:
         dataset_kwargs = {"columns_to_drop": exclude_columns}
 
-    weight_decay = trial.suggest_loguniform("weight_decay", 1e-3, 1)
+    weight_decay = trial.suggest_float("weight_decay", 1e-3, 1, log=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     criterion = nn.BCEWithLogitsLoss()
@@ -136,13 +134,13 @@ def train_and_evaluate_model(
         outputs_and_predictions["labels"].append(test_ys["labels"])
         outputs_and_predictions["predictions"].append(test_ys["predictions"])
 
-    # np.save(f"predictions/outputs_and_predictions_{trial.number}.npy", outputs_and_predictions)
+    np.save(f"predictions/outputs_and_predictions_{trial.number}.npy", outputs_and_predictions)
 
     mean_test_metrics = {metric: np.mean(values) for metric, values in test_metrics.items()}
     std_test_metrics = {metric: np.std(values) for metric, values in test_metrics.items()}
     mean_val_metrics = {metric: np.mean(values) for metric, values in val_metrics_folds.items()}
 
-    # save_models(models, trial.number, mean_test_metrics)
+    save_models(models, trial.number, mean_test_metrics)
 
     # log to optuna
     log_optuna_metrics(trial, mean_val_metrics)
