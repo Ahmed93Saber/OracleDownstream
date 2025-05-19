@@ -3,61 +3,96 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
+from typing import List, Tuple, Optional
 
-class ClinicalDataset(Dataset):
+
+
+class BasePatientDataset(Dataset):
     """
-    PyTorch Dataset for clinical data.
+    Shared utilities for clinical and imaging datasets.
     """
-    def __init__(self, dataframe: pd.DataFrame, columns_to_drop: list = None):
+    def __init__(self, dataframe: pd.DataFrame):
         self.dataframe = dataframe
-        self.columns_to_drop = columns_to_drop
 
-    def __len__(self) -> int:
-        return len(self.dataframe)
+    def get_label_tensor(self, row) -> torch.Tensor:
+        return torch.tensor(row['label-1RN-0Normal'], dtype=torch.float32)
 
-    def __getitem__(self, index: int):
-        row = self.dataframe.iloc[index]
-        label = row['label-1RN-0Normal']
-        features = row.drop(self.columns_to_drop).values.astype('float32')
-        features_tensor = torch.tensor(features, dtype=torch.float32)
-        label_tensor = torch.tensor(label, dtype=torch.float32)
-        return features_tensor, label_tensor
-
-
-class ImagingDataset(Dataset):
-    """
-    PyTorch Dataset for Imaging data (Representations).
-    """
-    def __init__(self, dataframe: pd.DataFrame, data_dir : str, is_gap : bool = False, is_img : bool = False):
-        self.dataframe = dataframe
-        self.is_img = is_img
-
-        if is_gap:
-            self.embedd_type = 'embedding_attn_pool'  # 2D
-        else:
-            self.embedd_type = "embedding_norm"  # 3D
-
-        self.img_seq = np.load(data_dir, allow_pickle=True).item()
-
-    def __len__(self) -> int:
-        return len(self.dataframe)
-
-    def __getitem__(self, index: int):
-        row = self.dataframe.iloc[index]
-        label = row['label-1RN-0Normal']
+    def get_dict_key(self, row) -> str:
         patient_id = row["Patient ID"]
         met_id = row["id"]
         scan_date = row["scan_date"].split()[0]
-        dict_key = f"{patient_id}_{scan_date}_{met_id}"
+        return f"{patient_id}_{scan_date}_{met_id}"
+
+
+class ClinicalDataset(BasePatientDataset):
+    def __init__(self, dataframe: pd.DataFrame, columns_to_drop: List[str]):
+        super().__init__(dataframe)
+        self.columns_to_drop = columns_to_drop
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        row = self.dataframe.iloc[index]
+        features = row.drop(self.columns_to_drop).values.astype('float32')
+        features_tensor = torch.tensor(features, dtype=torch.float32)
+        label_tensor = self.get_label_tensor(row)
+        return features_tensor, label_tensor
+
+    def __len__(self) -> int:
+        return len(self.dataframe)
+
+
+class ImagingDataset(BasePatientDataset):
+    def __init__(self, dataframe: pd.DataFrame, data_dir: str, is_gap: bool = False, is_img: bool = False):
+        super().__init__(dataframe)
+        self.embedd_type = 'embedding_attn_pool' if is_gap else 'embedding_norm'
+        self.img_seq = np.load(data_dir, allow_pickle=True).item()
+        self.is_gap = is_gap
+        self.is_img = is_img
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        row = self.dataframe.iloc[index]
+        dict_key = self.get_dict_key(row)
 
         if self.is_img:
-            features_tensor = self.img_seq[dict_key][0, ...].clone().detach().float()
+            img_tensor = self.img_seq[dict_key][0, ...].clone().detach().float()
         else:
-            features_tensor = self.img_seq[dict_key][self.embedd_type].clone().detach().float().squeeze()
+            img_tensor = self.img_seq[dict_key][self.embedd_type].clone().detach().float().squeeze()
 
-        label_tensor = torch.tensor(label, dtype=torch.float32)
+        label_tensor = self.get_label_tensor(row)
+        return img_tensor, label_tensor
 
-        return features_tensor, label_tensor
+    def __len__(self) -> int:
+        return len(self.dataframe)
+
+
+class MultimodalDataset(BasePatientDataset):
+    def __init__(self, dataframe: pd.DataFrame, data_dir: str, columns_to_drop: List[str], is_gap: bool = False):
+        super().__init__(dataframe)
+        self.columns_to_drop = columns_to_drop
+        self.embedd_type = 'embedding_attn_pool' if is_gap else 'embedding_norm'
+        self.img_seq = np.load(data_dir, allow_pickle=True).item()
+        self.is_gap = is_gap
+
+    def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        row = self.dataframe.iloc[index]
+        dict_key = self.get_dict_key(row)
+
+        # Clinical features
+        clinical_data = row.drop(self.columns_to_drop).values.astype('float32')
+        clinical_tensor = torch.tensor(clinical_data, dtype=torch.float32)
+
+        # Imaging features
+        if self.is_gap:
+            img_tensor = self.img_seq[dict_key][0, ...].clone().detach().float()
+        else:
+            img_tensor = self.img_seq[dict_key][self.embedd_type].clone().detach().float().squeeze()
+
+        label_tensor = self.get_label_tensor(row)
+        return (clinical_tensor, img_tensor), label_tensor
+
+    def __len__(self) -> int:
+        return len(self.dataframe)
+
+
 
 def create_dataloaders(
     train_df: pd.DataFrame,
