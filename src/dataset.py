@@ -66,7 +66,8 @@ def create_dataloaders(
     batch_size: int,
     n_splits: int = 5,
     dataset_cls=ClinicalDataset,
-    dataset_kwargs: dict = None
+    dataset_kwargs: dict = None,
+    random_state: int = 42
 ):
     """
     Creates stratified K-fold dataloaders for training and validation using a generic dataset class.

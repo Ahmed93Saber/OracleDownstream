@@ -30,14 +30,36 @@ def load_and_preprocess_data(geo_csv_path, curated_csv_path, label_col):
     geo_df = add_num_weeks_column(geo_df, 'CROSSING_TIME_POINT')
     return geo_df
 
-def split_and_scale_data(df, label_col, feature_cols, test_size=0.2, random_state=0):
+
+def load_radiomics_splits():
+    # TODO: Delete hardcoded paths
+    train_df = pd.read_csv('./dataframes/train_radiomics.csv')
+    test_df = pd.read_csv('./dataframes/test_radiomics.csv')
+
+    return train_df, test_df
+
+def split_and_scale_data(df, label_col, feature_cols, test_size=0.2, random_state=0, is_radiomics=False):
     """
     Splits the dataframe into train and test sets and scales feature columns.
     """
-    train_df, test_df = train_test_split(df, test_size=test_size, random_state=random_state, stratify=df[label_col])
+    if is_radiomics:
+        categorical_vols = ['2+1.0', '1+2.0']
+        train_df, test_df = load_radiomics_splits()
+
+    else:
+        categorical_vols = []
+        train_df, test_df = train_test_split(df, test_size=test_size,
+                                             random_state=random_state, stratify=df[label_col])
     scaler = StandardScaler()
     train_df[feature_cols] = scaler.fit_transform(train_df[feature_cols])
     test_df[feature_cols] = scaler.transform(test_df[feature_cols])
+
+    # Add categorical columns to the splits
+    for col in categorical_vols:
+        train_df[col] = train_df[col]
+        test_df[col] = test_df[col]
+
+
     return train_df, test_df
 
 def add_num_weeks_column(df, date_col, reference_date=None):
